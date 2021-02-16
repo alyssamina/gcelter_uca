@@ -1,0 +1,396 @@
+---
+title: "LTER_ Microphallus b._8Oct14"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+
+## Library and data load
+
+```{r library}
+library(readr)
+library(tidyr)
+library(dplyr)
+library(MuMIn)
+library(visreg)
+library(car)
+library(lmerTest)
+library(glmmTMB)
+library(RVAideMemoire)
+library(multcomp)
+library(sjPlot)
+library(ggpubr) # for arranging ggplots in one page
+library(grid)  #gridding for ggplot
+library(glmmTMB)
+library(ggplot2)
+library(PNWColors)
+library(DHARMa)
+
+## load data
+ucameta <- read_csv("uca_binom_lter2_4Oct18.csv")
+
+## scale factors
+ucaf<-data.frame(station=as.factor(ucameta$station),upland=ucameta$upland, site=as.factor(ucameta$site), infected=ucameta$infected, meta=ucameta$metac, adul=ucameta$adult, elevm=scale(ucameta$elevm), veg_fracm=scale(ucameta$veg_fracm), salinitym=scale(ucameta$salinitym), wrackm=scale(ucameta$wrackm), water_contentm=scale(ucameta$water_contentm), marshwidthm=scale(ucameta$marshwidthm), Size=scale(ucameta$size),  crab=scale(ucameta$crabm), geuk=scale(ucameta$geukm), litt=scale(ucameta$littm))
+
+```
+
+
+# Figure 2, 3 and 4 and Table 2 and 3
+
+```{r binom - all data}
+
+#replication across sites
+#uneven number of station - and the minimum number of stations is 7
+sum2<-ucameta %>%
+          group_by(upland, station) %>%
+              summarize(avg=mean(size, na.rm=TRUE), n=length(size), inf=sum(infected=="1"), prev=sum(infected=="1")/length(size)*100, water=mean(water_contentm), salinity=mean(salinitym), wrack=mean(wrackm), size=mean(size), geuk=mean(geukm), elev=mean(elevm), litt=mean(littm)); sum2
+
+## color palette
+up_col<-rev(pnw_palette("Cascades",3,type="discrete"))
+
+### Figure 2 ###############
+#pdf("Fig2_16Feb21.pdf", width=5, height=4, pointsize=12)
+ggplot(sum2, aes(x=upland, y=prev))+
+  geom_boxplot(outlier.color=NULL, outlier.alpha = 0, aes(colour=factor(upland)))+
+  geom_jitter(position = position_jitter(width = .09), aes(colour = factor(upland), shape=factor(upland)),show.legend = FALSE, size=4)+
+  labs(x="Land use development", y="Prevalence")+
+  scale_color_manual(values = up_col) +
+  scale_x_discrete(labels=c("B" = "Armored", "F" = "Undeveloped",
+                              "H" = "Unarmored"))+
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position = "none",
+        axis.line = element_line(colour = "black"))
+#dev.off()
+
+
+########## dredge  ##################
+ucaf3<-na.omit(ucaf) #remove na's
+
+#logistic regression
+inf12<-glmmTMB(infected~elevm+veg_fracm+salinitym+wrackm+water_contentm+Size+geuk+crab+litt+marshwidthm+(1|site)+(1|upland), family="binomial", data=ucaf3)
+
+## upland on its own
+inf13<-glmmTMB(infected~upland+(1|site), family="binomial", data=ucaf3)
+tab_model(inf13, int13)
+
+
+## check fit
+owls_nb1_simres <- simulateResiduals(inf12)
+system.time(sr <- simulateResiduals(inf12))
+##    user  system elapsed 
+##  10.138   0.054  10.239
+plot(sr)
+
+
+options(na.action=na.fail)
+d12=dredge(inf12, trace=TRUE); d12
+
+#this is where the model averaging happens
+mfit <- get.models(d12, seq(nrow(d12)))
+
+## Model average
+mod.avg2<-model.avg(mfit, subset = delta < 2) #2 for (burnham and anderson 2002) 
+summary(mod.avg2)
+
+#load model average table
+mavg<-read_csv("modavg_subset_tmb_randuplandstation_21Jan20.csv")
+
+### Figure 3 ################
+
+#reorder factors
+mavg$var <- factor(mavg$X1, levels = mavg$X1[rev(order(mavg$'Pr(>|z|)'))])
+
+#pdf("Fig3_16Feb21.pdf", height=5, width=5)
+ggplot(mavg, aes(x=Estimate, y =var)) +
+  #size of our points
+  geom_point(size = 5) +
+  # adding in the confidence intervals and size
+  geom_segment(aes(x = `2.50%`, xend = `97.50%`, y = var, yend=var), size = 1.5)+
+  #i added a line at 0 for reference
+  geom_vline(x=0, xintercept = 0, linetype="longdash") +
+  #make the theme black and white
+  theme_bw() +
+  #make all of these things blank:
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  theme(axis.line = element_blank()) +
+  theme(plot.title = element_text(hjust= -0.16, vjust= -1)) +
+  # set the bounds of x be sure this fits your upper and lower CI levels otherwise you'll get an error
+  theme(axis.text.y = element_text(size=15)) +
+  theme(axis.ticks.y = element_blank()) +
+  theme(axis.title.y = element_blank()) +
+  #make the x labels bigger
+  theme(axis.text.x = element_text(size =20)) +
+  theme(axis.title.x = element_blank()) 
+#dev.off()
+
+
+### Figure 4 #################
+
+t1<-ggplot(sum2, aes(y=prev, x=water, color=factor(upland), shape=factor(upland)))+
+  geom_point(size=4)+
+  labs(x="Soil Water Content", y="Prevalence")+
+  theme_bw() +
+  scale_color_manual(values = up_col) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        legend.position="none",
+        axis.line = element_line(colour = "black")); t1
+
+t2<-ggplot(sum2, aes(y=prev, x=size, color=factor(upland), shape=factor(upland)))+
+  geom_point(size=4)+
+  labs(x="Crab Size (mm)", y="Prevalence")+
+  scale_color_manual(values = up_col) +
+  theme_bw() +  
+  theme(legend.position = "none")+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")); t2
+
+t3<-ggplot(sum2, aes(y=prev, x=geuk, color=factor(upland), shape=factor(upland)))+
+  geom_point(size=4)+
+  labs(x=bquote('Geukensia density'~(m^-2)), y="Prevalence", shape="Adjacent Landuse")+
+  scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  scale_shape_manual(values=c(19,17,15),name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  theme_bw() +
+  theme(legend.position = c(.8,.8))+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")); t3
+
+#pdf("Fig4_16Feb21.pdf", width=5, height=12)
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(3, 1)))
+vplayout <- function(x, y)
+  viewport(layout.pos.row = x, layout.pos.col = y)
+print(t1, vp = vplayout(1, 1))
+print(t2, vp=vplayout(2,1))
+print(t3, vp=vplayout(3,1))
+#dev.off()
+
+
+```
+
+
+#Figure 5, 6 and S1, Table 4 and S2
+
+```{r intensity, metac, adult}
+
+# Filter dataset to include only infected individuals
+ucaint<-ucaf3 %>%
+            filter(infected=="1")
+
+ucaint$intent<-ucaint$meta+ucaint$adul
+     
+########## dredge  ##################
+ucaint<-na.omit(ucaint)
+
+## remove outlier points
+ucaint2<-ucaint %>%
+  filter(meta<25)
+
+int<-glmmTMB(intent~elevm+veg_fracm+salinitym+wrackm+water_contentm+Size+geuk+crab+litt+marshwidthm+(1|upland)+(1|site), family='nbinom1', data=ucaint2)
+
+
+##maybe how to check fit
+owls_nb1_simres <- simulateResiduals(int)
+system.time(sr <- simulateResiduals(int))
+##    user  system elapsed 
+##  10.138   0.054  10.239
+plot(sr)
+
+
+options(na.action=na.fail)
+d2=dredge(int, trace=TRUE); d2
+
+#this is where the model averaging happens
+ifit <- get.models(d2, seq(nrow(d2)))
+
+mod.avgfit3 <- model.avg(ifit, subset = delta < 2)
+summary(mod.avgfit3)
+
+##load model average table
+mavg2<-read_csv("modavg_intensity_subset_tmb_21Jan20.csv")
+
+# redorder factors
+mavg2$var <- factor(mavg2$X1, levels = mavg2$X1[rev(order(mavg2$'Pr(>|z|)'))])
+
+## Figure 5 ###################
+
+#pdf("Fig5_16Feb21.pdf", height=5, width=5)
+ggplot(mavg2, aes(x=Estimate, y=var)) +
+  #size of our points
+  geom_point(size = 5) +
+  # adding in the confidence intervals and size
+  geom_segment(aes(x = `2.50%`, xend = `97.50%`, y =var, yend=var), size = 1.5)+
+  #i added a line at 0 for reference
+  geom_vline(x=0, xintercept = 0, linetype="longdash") +
+  #make the theme black and white
+  theme_bw() +
+  #make all of these things blank:
+  theme(panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  theme(axis.line = element_blank()) +
+  theme(plot.title = element_text(hjust= -0.16, vjust= -1)) +
+  # set the bounds of x be sure this fits your upper and lower CI levels otherwise you'll get an error
+  theme(axis.text.y = element_text(size=15)) +
+  theme(axis.ticks.y = element_blank()) +
+  theme(axis.title.y = element_blank()) +
+  #make the x labels bigger
+  theme(axis.text.x = element_text(size =20)) +
+  theme(axis.title.x = element_blank()) 
+#dev.off()
+
+
+### raw data plot of patterns
+s<-ucameta %>%
+  filter(infected=="1")
+      
+## Figure 6 ###################
+
+#pdf("Fig6_16Feb21.pdf", width=7, height=4, pointsize = 12)
+t<-ggplot(s, aes(size, intensity, color=factor(upland), shape=factor(upland)))+
+  geom_point(size=4)+
+  labs(x="Crab Size (mm)", y="Intensity (Number of worms per host)")+
+  scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored"))+
+  scale_shape_manual(values = c(19,17,15), name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored"))+
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")); t
+ #dev.off()
+ 
+
+## Statistical analysis of precocious adult intensity by metacercarial intensity and land use development.
+## Table S2 #####
+
+########## dredge  ##################
+ucaint<-na.omit(ucaint)
+
+ucaint2<-ucaint %>%
+  filter(meta<25)
+
+ad<-glmer(adul~crab+meta+upland+(1|station),family="nbinom2", data=ucaint2)
+summary(ad)
+r.squaredGLMM(ad)
+confint(ad)
+
+tab_model(ad)
+
+s2<-s %>%
+  filter(metac<25)
+
+#pdf("FigureS1_16Feb21.pdf", width=10, height=4)
+t<-ggplot(s, aes(metac, adult))+
+  geom_jitter(aes(color=factor(upland), shape=factor(upland)), size=4, width = 0.1, height=0.1)+
+  labs(x="Metacercariae (Number per host)", y="Adult worms (Number per host)")+
+  scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored"))+
+  scale_shape_manual(values = c(19,17,15), name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored"))+
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black")); t
+#dev.off()
+
+
+```
+
+
+
+
+## Figure S2 and Table S3 
+```{r upland correlates}
+
+## stats
+sum2$upland<-as.factor(sum2$upland)
+ge<-glmmTMB(geuk~upland+(1|station), family=poisson ,data=sum2)
+#summary(glht(ge,linfct=mcp(upland="Tukey")))
+wa<-glmmTMB(water~upland+(1|station), data=sum2); tab_model(wa)
+#summary(glht(wa, linfct = mcp(upland = "Tukey")))
+si<-glmmTMB(Size~upland+(1|station), data=ucaf3); summary(si)
+tab_model(ge,wa,si)
+#remove outlier from litt data
+tab_model(ge,wa,si)
+
+
+### model assumption test
+system.time(sr <- simulateResiduals(si))
+plot(sr)
+
+## graphs
+v1<-ggplot(sum2, aes(x=upland, y=geuk))+
+  geom_boxplot(outlier.color=NULL, outlier.alpha = 0, aes(colour=factor(upland)))+
+  geom_jitter(position = position_jitter(width = .09), aes(colour = factor(upland), shape=factor(upland)),show.legend = FALSE, size=4)+
+  labs(x="Land use development", y="Geukensia counts")+
+  scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  scale_shape_manual(values=c(19,17,15),name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  theme_bw() +
+  theme(legend.position = "none")+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+v2<-ggplot(sum2, aes(x=upland, y=water))+
+  geom_boxplot(outlier.color=NULL, outlier.alpha = 0, aes(colour=factor(upland)))+
+  geom_jitter(position = position_jitter(width = .09), aes(colour = factor(upland), shape=factor(upland)),show.legend = FALSE, size=4)+
+  labs(x="Upland land use", y="Soil water content")+
+  scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  scale_shape_manual(values=c(19,17,15),name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  theme_bw() +
+  theme(legend.position = "none")+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+v3<-ggplot(ucameta, aes(x=upland, y=size))+
+  geom_boxplot(outlier.color=NULL, outlier.alpha = 0, aes(colour=factor(upland)))+
+  geom_jitter(position = position_jitter(width = .09), aes(colour = factor(upland), shape=factor(upland)),size=4, show.legend = FALSE)+
+  labs(x="Upland land use", y="Uca size (mm)")+
+  scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  scale_shape_manual(values=c(19,17,15),name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored")) +
+  theme_bw() +
+  theme(legend.position = "none")+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"))
+
+
+#pdf("FigureS2_16Feb21.pdf", width=12, height=4, pointsize=12)
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 3)))
+vplayout <- function(x, y)
+  viewport(layout.pos.row = x, layout.pos.col = y)
+print(v1, vp = vplayout(1, 1))
+print(v2, vp=vplayout(1,2))
+print(v3, vp=vplayout(1,3))
+#dev.off()
+
+
+
+```
+
+
