@@ -12,24 +12,21 @@ editor_options:
 
 ```{r library}
 library(readr)
-library(tidyr)
 library(dplyr)
 library(MuMIn)
-library(visreg)
 library(car)
 library(lmerTest)
 library(glmmTMB)
 library(RVAideMemoire)
-library(multcomp)
+#library(multcomp)
 library(sjPlot)
-library(ggpubr) # for arranging ggplots in one page
-library(grid)  #gridding for ggplot
 library(glmmTMB)
 library(ggplot2)
 library(PNWColors)
 library(DHARMa)
+library(cowplot)
 
-## load data
+## load data - 
 ucameta <- read_csv("uca_binom_lter2_16Apr21.csv")
 
 ## scale factors
@@ -117,7 +114,7 @@ d12=dredge(inf12, trace=TRUE); d12
 mfit <- get.models(d12, seq(nrow(d12)))
 
 ## Model average
-mod.avg2<-model.avg(mfit, subset = delta < 2) #2 for (burnham and anderson 2002) 
+mavg<-model.avg(mfit, subset = delta < 2) #2 for (burnham and anderson 2002) 
 summary(mod.avg2)
 
 #load model average table
