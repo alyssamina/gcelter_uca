@@ -96,7 +96,7 @@ inf12<-glmmTMB(infected~elevm+veg_fracm+salinitym+wrackm+water_contentm+Size+geu
 
 ## upland on its own
 inf13<-glmmTMB(infected~upland+(1|site), family="binomial", data=ucaf)
-tab_model(inf13, int13)
+tab_model(inf13, int13) #requires line 274
 
 
 ## check fit
@@ -364,11 +364,8 @@ confint(ad)
 
 tab_model(ad)
 
-s2<-s %>%
-  filter(metac<25)
-
 #pdf("FigureS1_16Feb21.pdf", width=10, height=4)
-t2<-ggplot(s2, aes(metac, adult))+
+t2<-ggplot(s, aes(metac, adult))+
   geom_jitter(aes(color=factor(upland), shape=factor(upland)), size=4, width = 0.1, height=0.1)+
   labs(x="Metacercariae", y="Progenetic metacercariae")+
   scale_color_manual(values = up_col, name="Land use development", labels = c("Armored", "Undeveloped", "Unarmored"))+
@@ -403,13 +400,6 @@ wa<-glmmTMB(water~upland+(1|station), data=sum2); tab_model(wa)
 #summary(glht(wa, linfct = mcp(upland = "Tukey")))
 si<-glmmTMB(Size~upland+(1|station), data=ucaf3); summary(si)
 tab_model(ge,wa,si)
-#remove outlier from litt data
-tab_model(ge,wa,si)
-
-
-### model assumption test
-system.time(sr <- simulateResiduals(si))
-plot(sr)
 
 
 
